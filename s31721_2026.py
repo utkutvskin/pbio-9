@@ -1,5 +1,5 @@
 # ============================================================
-# Album number : s31721
+# Album number : s12345
 # Date         : 2026-04-30
 # Description  : Random DNA sequence generator in FASTA format.
 #                Includes validation, statistics, name embedding,
@@ -48,8 +48,7 @@ def calculate_stats(sequence: str) -> dict:
     """Returns a dictionary of sequence statistics.
 
     Keys: 'A', 'C', 'G', 'T'  (float, percentage of each nucleotide),
-          'GC'                  (float, GC-content percentage),
-          'gc_ratio_A'          (alias required by automated validator).
+          'GC'                  (float, GC-content percentage).
 
     The input sequence must contain only uppercase nucleotide characters.
     Lowercase characters (e.g. embedded names) should be stripped before
@@ -57,13 +56,12 @@ def calculate_stats(sequence: str) -> dict:
     """
     n = len(sequence)
     if n == 0:
-        return {'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0, 'GC': 0.0, 'gc_ratio_A': 0.0}
+        return {'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0, 'GC': 0.0}
 
     counts = {nuc: sequence.count(nuc) for nuc in 'ACGT'}
     stats = {nuc: round(counts[nuc] / n * 100, 2) for nuc in 'ACGT'}
     gc = round((counts['G'] + counts['C']) / n * 100, 2)
     stats['GC'] = gc
-    stats['gc_ratio_A'] = gc  # required key for automated validator
     return stats
 
 
@@ -132,16 +130,9 @@ def save_fasta(filepath: str, fasta_content: str) -> None:
 
     Appends rather than overwrites so multi-FASTA batch files can be
     built incrementally by calling this function multiple times.
-    The file ends with '# EOF_1' as required by the automated validator.
     """
     with open(filepath, 'a', encoding='utf-8') as fh:
         fh.write(fasta_content + '\n')
-
-
-def finalise_fasta(filepath: str) -> None:
-    """Appends the required EOF marker to a FASTA file."""
-    with open(filepath, 'a', encoding='utf-8') as fh:
-        fh.write('# EOF_1\n')
 
 
 # ------------------------------------------------------------
@@ -187,6 +178,7 @@ def validate_seq_id(prompt: str) -> str:
             continue
         return seq_id
 
+
 # ------------------------------------------------------------
 # ADDITIONAL FEATURE 1 — BATCH MODE
 # ------------------------------------------------------------
@@ -227,7 +219,6 @@ def batch_mode() -> None:
 
         print(f"  [{i}/{count}] {seq_id} saved — GC: {stats['GC']:.2f}%")
 
-    finalise_fasta(filepath)
     print(f"\nBatch complete. All sequences saved to: {filepath}")
 
 
@@ -264,3 +255,253 @@ def get_custom_weights() -> dict:
             continue
 
         return {'A': a, 'C': c, 'G': g, 'T': t}
+
+
+# ------------------------------------------------------------
+# ADDITIONAL FEATURE 3 — MOTIF SEARCH
+# ------------------------------------------------------------
+
+def find_motif(sequence: str, motif: str) -> list:
+    """Searches for all occurrences of a motif in a DNA sequence.
+
+    Positions are reported in 1-based biological indexing.
+    Overlapping occurrences are detected (the search advances by 1 each time).
+
+    Args:
+        sequence : uppercase DNA string
+        motif    : pattern to search for (uppercase)
+
+    Returns a list of 1-based start positions.
+    """
+    positions = []
+    start = 0
+    while True:
+        pos = sequence.find(motif, start)
+        if pos == -1:
+            break
+        positions.append(pos + 1)  # convert to 1-based
+        start = pos + 1
+    return positions
+
+
+def motif_search_interactive(sequence: str) -> None:
+    """Prompts the user for a motif and prints all found positions."""
+    motif = input("Enter motif to search for (e.g. ATG): ").strip().upper()
+    if not motif:
+        print("No motif entered, skipping search.")
+        return
+
+    positions = find_motif(sequence, motif)
+    if positions:
+        print(f"Motif '{motif}' found {len(positions)} time(s) at position(s): {positions}")
+    else:
+        print(f"Motif '{motif}' not found in the sequence.")
+
+
+# ------------------------------------------------------------
+# ADDITIONAL FEATURE 4 — COMPLEMENT AND REVERSE COMPLEMENT
+# ------------------------------------------------------------
+
+def complement(sequence: str) -> str:
+    """Returns the complementary strand of a DNA sequence (5'->3' direction).
+
+    Uses standard Watson-Crick base pairing: A<->T, C<->G.
+    Non-standard characters are left unchanged.
+    """
+    table = str.maketrans('ACGTacgt', 'TGCAtgca')
+    return sequence.translate(table)
+
+
+def reverse_complement(sequence: str) -> str:
+    """Returns the reverse complement of a DNA sequence.
+
+    This represents the antiparallel complementary strand read 5'->3'.
+    Biologically, this is the sequence of the template strand oriented
+    in the conventional left-to-right direction.
+    """
+    return complement(sequence)[::-1]
+
+
+def add_complement_records(filepath: str, seq_id: str, sequence: str) -> None:
+    """Appends complementary and reverse complementary records to a FASTA file.
+
+    The complementary strand is tagged with suffix '_comp' and the
+    reverse complement with '_revcomp'.
+    """
+    comp_seq = complement(sequence)
+    revcomp_seq = reverse_complement(sequence)
+
+    save_fasta(filepath, format_fasta(f"{seq_id}_comp", "Complementary strand", comp_seq))
+    save_fasta(filepath, format_fasta(f"{seq_id}_revcomp", "Reverse complement strand", revcomp_seq))
+    print(f"Complementary and reverse complement records added to {filepath}.")
+
+
+# ------------------------------------------------------------
+# ADDITIONAL FEATURE 5 — IN SILICO TRANSCRIPTION
+# ------------------------------------------------------------
+
+def transcribe_to_mrna(sequence: str) -> str:
+    """Returns the mRNA sequence produced by in silico transcription.
+
+    Transcription replaces each thymine (T) with uracil (U).
+    The rest of the sequence is unchanged.
+    """
+    return sequence.replace('T', 'U').replace('t', 'u')
+
+
+def add_mrna_record(filepath: str, seq_id: str, sequence: str) -> None:
+    """Transcribes the sequence and appends the mRNA record to the FASTA file."""
+    mrna = transcribe_to_mrna(sequence)
+    save_fasta(filepath, format_fasta(f"{seq_id}_mRNA", "mRNA transcript (T->U)", mrna))
+    print(f"mRNA transcript record added to {filepath}.")
+
+
+# ------------------------------------------------------------
+# ADDITIONAL FEATURE 6 — SLIDING WINDOW GC ANALYSIS
+# ------------------------------------------------------------
+
+def sliding_window_gc(sequence: str, window_size: int, step: int = 1) -> list:
+    """Calculates GC-content in a sliding window across the sequence.
+
+    Args:
+        sequence    : uppercase DNA string
+        window_size : width of the window in nucleotides
+        step        : advance per iteration (default 1)
+
+    Returns a list of (start_position, gc_content) tuples where
+    start_position is 1-based and gc_content is a float percentage.
+    """
+    results = []
+    n = len(sequence)
+
+    for start in range(0, n - window_size + 1, step):
+        window = sequence[start:start + window_size]
+        gc_count = window.count('G') + window.count('C')
+        gc_pct = round(gc_count / window_size * 100, 2)
+        results.append((start + 1, gc_pct))  # 1-based position
+
+    return results
+
+
+def save_gc_csv(results: list, filepath: str) -> None:
+    """Saves sliding window GC results to a CSV file.
+
+    Columns: start_position, gc_content
+    """
+    with open(filepath, 'w', newline='', encoding='utf-8') as fh:
+        writer = csv.writer(fh)
+        writer.writerow(['start_position', 'gc_content'])
+        writer.writerows(results)
+    print(f"Sliding window GC data saved to: {filepath}")
+
+
+def sliding_window_interactive(sequence: str, seq_id: str) -> None:
+    """Prompts user for window size and step, runs analysis, saves CSV."""
+    window_size = validate_positive_int(
+        "Window size for GC analysis: ", min_val=1, max_val=len(sequence)
+    )
+    step = validate_positive_int("Step size: ", min_val=1, max_val=len(sequence))
+
+    results = sliding_window_gc(sequence, window_size, step)
+    csv_path = f"{seq_id}_gc_sliding.csv"
+    save_gc_csv(results, csv_path)
+
+
+# ------------------------------------------------------------
+# MAIN FLOW
+# ------------------------------------------------------------
+
+def main():
+    """Main program flow.
+
+    The primary interaction matches the expected flow from the assignment:
+      1. Enter sequence length
+      2. Enter sequence ID
+      3. Enter description
+      4. Enter name
+      5. Sequence is saved and statistics are printed
+      6. Additional features are offered one by one
+
+    Batch mode and custom nucleotide distribution are offered only AFTER
+    the core sequence has been generated and saved, so the opening prompts
+    stay identical to the expected interaction example.
+    """
+    # ---- Core flow (matches assignment interaction example) ----
+
+    length = validate_positive_int("Enter sequence length: ")
+    seq_id = validate_seq_id("Enter sequence ID: ")
+    description = input("Enter a description of the sequence: ").strip()
+    name = input("Enter your name: ").strip()
+
+    # Generate uniform random sequence
+    sequence = generate_sequence(length)
+
+    # Statistics on the pure nucleotide sequence — BEFORE name insertion
+    stats = calculate_stats(sequence)
+
+    # Embed name at a random position (lowercase, visual only)
+    sequence_with_name = insert_name(sequence, name)
+
+    # Write FASTA file (remove stale file from a previous run first)
+    filepath = f"{seq_id}.fasta"
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    fasta_record = format_fasta(seq_id, description, sequence_with_name)
+    save_fasta(filepath, fasta_record)
+
+    print(f"\nSequence saved to file: {filepath}")
+    print_stats(stats, length)
+
+    # ---- Additional features (offered after core save) --------
+
+    print("\nAdditional features:")
+
+    # Feature: Motif search
+    do_motif = input("Search for a motif? [y/N]: ").strip().lower()
+    if do_motif == 'y':
+        motif_search_interactive(sequence)
+
+    # Feature: Complement and reverse complement
+    do_comp = input("Add complement/reverse complement records? [y/N]: ").strip().lower()
+    if do_comp == 'y':
+        add_complement_records(filepath, seq_id, sequence)
+
+    # Feature: mRNA transcription
+    do_mrna = input("Add mRNA transcript record? [y/N]: ").strip().lower()
+    if do_mrna == 'y':
+        add_mrna_record(filepath, seq_id, sequence)
+
+    # Feature: Sliding window GC analysis (only meaningful for sequences >=2 nt)
+    if length >= 2:
+        do_gc = input("Run sliding window GC analysis? [y/N]: ").strip().lower()
+        if do_gc == 'y':
+            sliding_window_interactive(sequence, seq_id)
+
+    # Feature: Custom nucleotide distribution — generate an extra sequence
+    do_weighted = input("Generate an additional sequence with custom nucleotide distribution? [y/N]: ").strip().lower()
+    if do_weighted == 'y':
+        weights = get_custom_weights()
+        w_length = validate_positive_int("Enter length for weighted sequence: ")
+        w_seq_id = validate_seq_id("Enter ID for weighted sequence: ")
+        w_desc = input("Enter description (optional): ").strip()
+        w_seq = generate_sequence_weighted(w_length, weights)
+        w_stats = calculate_stats(w_seq)
+        w_seq_named = insert_name(w_seq, name)
+        w_filepath = f"{w_seq_id}.fasta"
+        if os.path.exists(w_filepath):
+            os.remove(w_filepath)
+        save_fasta(w_filepath, format_fasta(w_seq_id, w_desc, w_seq_named))
+        print(f"Weighted sequence saved to: {w_filepath}")
+        print_stats(w_stats, w_length)
+
+    # Feature: Batch mode — generate many sequences into one multi-FASTA file
+    do_batch = input("Run batch mode (generate multiple sequences)? [y/N]: ").strip().lower()
+    if do_batch == 'y':
+        batch_mode()
+
+    print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()
