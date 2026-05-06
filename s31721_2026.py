@@ -186,3 +186,81 @@ def validate_seq_id(prompt: str) -> str:
             print("Error: ID cannot contain whitespace characters.")
             continue
         return seq_id
+
+# ------------------------------------------------------------
+# ADDITIONAL FEATURE 1 — BATCH MODE
+# ------------------------------------------------------------
+
+def batch_mode() -> None:
+    """Generates multiple sequences and saves them all to a single multi-FASTA file.
+
+    The user specifies the number of sequences and a common base ID.
+    Each sequence receives a unique numeric suffix (e.g. Seq_001, Seq_002).
+    All records are written to <base_id>_batch.fasta.
+    """
+    count = validate_positive_int("How many sequences to generate? ", min_val=1, max_val=1000)
+    base_id = validate_seq_id("Enter base ID (e.g. Seq): ")
+    length = validate_positive_int("Enter sequence length: ")
+    description = input("Enter description (optional): ").strip()
+    name = input("Enter your name (optional, leave blank to skip): ").strip()
+
+    filepath = f"{base_id}_batch.fasta"
+
+    # Remove any existing file so we start fresh
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    for i in range(1, count + 1):
+        seq_id = f"{base_id}_{i:03d}"
+        seq = generate_sequence(length)
+
+        # Statistics on pure nucleotide sequence (before name insertion)
+        stats = calculate_stats(seq)
+
+        if name:
+            seq_with_name = insert_name(seq, name)
+        else:
+            seq_with_name = seq
+
+        fasta_str = format_fasta(seq_id, description, seq_with_name)
+        save_fasta(filepath, fasta_str)
+
+        print(f"  [{i}/{count}] {seq_id} saved — GC: {stats['GC']:.2f}%")
+
+    finalise_fasta(filepath)
+    print(f"\nBatch complete. All sequences saved to: {filepath}")
+
+
+# ------------------------------------------------------------
+# ADDITIONAL FEATURE 2 — CONFIGURABLE NUCLEOTIDE DISTRIBUTION
+# ------------------------------------------------------------
+
+def get_custom_weights() -> dict:
+    """Asks the user for custom nucleotide percentages that sum to 100.
+
+    Repeats the prompt if the percentages are invalid (non-numeric,
+    negative values, or sum not equal to 100).
+
+    Returns a dict with keys A, C, G, T and float values.
+    """
+    while True:
+        print("Enter nucleotide percentages (must sum to 100):")
+        try:
+            a = float(input("  A (%): "))
+            c = float(input("  C (%): "))
+            g = float(input("  G (%): "))
+            t = float(input("  T (%): "))
+        except ValueError:
+            print("Error: please enter numeric values.")
+            continue
+
+        if any(v < 0 for v in [a, c, g, t]):
+            print("Error: percentages cannot be negative.")
+            continue
+
+        total = a + c + g + t
+        if abs(total - 100.0) > 0.01:
+            print(f"Error: percentages must sum to 100 (got {total:.2f}).")
+            continue
+
+        return {'A': a, 'C': c, 'G': g, 'T': t}
